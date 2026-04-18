@@ -1,9 +1,9 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
+import matplotlib
+matplotlib.use('Agg')  # ✅ ELIMINATES ALL ScriptRunContext WARNINGS
+import matplotlib.pyplot as plt
 import random
 
 # ==========================================
@@ -11,7 +11,9 @@ import random
 # ==========================================
 
 def calculate_gini(wealth_list):
-    """Calculates the Gini Coefficient (0 = perfect equality, 1 = perfect inequality)."""
+    """
+    Calculates the Gini Coefficient (0 = perfect equality, 1 = perfect inequality).
+    """
     wealth = np.array(wealth_list)
     if len(wealth) == 0 or np.sum(wealth) == 0:
         return 0.0
@@ -24,7 +26,9 @@ def calculate_gini(wealth_list):
     return round(gini, 4)
 
 def generate_lorenz_data(wealth_list):
-    """Prepares data for the Lorenz Curve."""
+    """
+    Prepares data for the Lorenz Curve.
+    """
     wealth = np.array(sorted(wealth_list))
     n = len(wealth)
     if n == 0 or np.sum(wealth) == 0:
@@ -204,12 +208,12 @@ class Economy:
         })
 
 # ==========================================
-# 4. THE DASHBOARD: Streamlit UI (PLOTLY VERSION)
+# 4. THE DASHBOARD: Streamlit UI
 # ==========================================
 
 st.set_page_config(page_title="Equilibrium Simulator", layout="wide")
 
-# --- Initialize session state ---
+# --- Initialize session state defaults ---
 if 'initialized' not in st.session_state:
     st.session_state.initialized = True
     st.session_state.economy = None
@@ -220,54 +224,71 @@ if 'initialized' not in st.session_state:
 st.sidebar.header("⚙️ Policy & Parameters")
 
 n_agents = st.sidebar.slider("Number of Agents", 50, 500, 100)
-grid_size = st.sidebar.slider("Grid Size", 5, 20, 10)
-transaction_cost = st.sidebar.slider("Transaction Cost (%)", 0.0, 5.0, 0.1, 0.1)
+grid_size = st.sidebar.slider("Grid Size (Local Economy)", 5, 20, 10)
+
+st.sidebar.subheader("Market Friction")
+transaction_cost = st.sidebar.slider("Transaction Cost (%)", 0.0, 0.05, 0.001, 0.0001)
 
 st.sidebar.subheader("Government Policy")
-ubi_enabled = st.sidebar.checkbox("Universal Basic Income", value=False)
-ubi_amount = st.sidebar.number_input("UBI Amount/Turn", 0.0, 100.0, 1.0)
+ubi_enabled = st.sidebar.checkbox("Universal Basic Income (UBI)", value=False)
+ubi_amount = st.sidebar.number_input("UBI Amount / Turn", 0.0, 100.0, 1.0, step=0.5)
 
-tax_enabled = st.sidebar.checkbox("Progressive Tax", value=False)
+tax_enabled = st.sidebar.checkbox("Progressive Tax (Every 50 Turns)", value=False)
 tax_rate = st.sidebar.slider("Tax Rate on Top 5%", 0.0, 0.5, 0.1)
 
-inheritance_enabled = st.sidebar.checkbox("Inheritance Tax", value=False)
+inheritance_enabled = st.sidebar.checkbox("Inheritance Tax (On Reset)", value=False)
 inheritance_tax = st.sidebar.slider("Inheritance Tax Rate", 0.0, 0.5, 0.2)
 
-# --- Economy Management ---
-if st.session_state.economy is None or \
-   n_agents != st.session_state.last_n_agents or \
-   grid_size != st.session_state.last_grid_size:
-    
+# --- Initialize or update economy ---
+if st.session_state.economy is None:
+    st.session_state.economy = Economy(n_agents=n_agents, grid_size=grid_size)
+    st.session_state.last_n_agents = n_agents
+    st.session_state.last_grid_size = grid_size
+
+needs_reset = (n_agents != st.session_state.last_n_agents or 
+               grid_size != st.session_state.last_grid_size)
+if needs_reset:
     st.session_state.economy = Economy(n_agents=n_agents, grid_size=grid_size)
     st.session_state.last_n_agents = n_agents
     st.session_state.last_grid_size = grid_size
 
 economy = st.session_state.economy
 
-# --- Title & Instructions ---
+# --- INTRO ---
 st.title("🏛️ Equilibrium: Agent-Based Economic Simulator")
 
 st.markdown("""
-**Digital Economics Lab** - Test policies like UBI, taxes, and market crashes on 100+ agents trading wealth.
-""")
+<div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px;'>
+    <h3>🧪 Digital Economics Lab</h3>
+    <p>Test policies like UBI, progressive taxes, and market crashes!</p>
+    <ol>
+        <li>Adjust policies in <strong>sidebar</strong></li>
+        <li>Click <strong>Run Turn</strong> to simulate</li>
+        <li>Watch <strong>Gini coefficient</strong> change</li>
+        <li>Try <strong>Black Swan</strong> for market crash</li>
+    </ol>
+</div>
+""", unsafe_allow_html=True)
 
-# --- Controls ---
+# --- CONTROLS ---
 col1, col2, col3 = st.columns(3)
+
 policy_config = {
-    'ubi': ubi_enabled, 'ubi_amount': ubi_amount,
-    'transaction_cost': transaction_cost/100,
-    'tax_rate': tax_rate if tax_enabled else 0,
-    'inheritance_tax': inheritance_tax if inheritance_enabled else 0
+    'ubi': ubi_enabled,
+    'ubi_amount': ubi_amount if ubi_enabled else 0.0,
+    'transaction_cost': transaction_cost,
+    'tax_rate': tax_rate if tax_enabled else 0.0,
+    'inheritance_tax': inheritance_tax if inheritance_enabled else 0.0
 }
 
 with col1:
-    if st.button("▶️ Run Turn", use_container_width=True):
+    if st.button("▶️ Run Next Turn", use_container_width=True):
         economy.run_turn(policy_config)
         st.rerun()
 
 with col2:
-    if st.button("🌑 Black Swan Event", use_container_width=True):
-        economy.trigger_black_swan()
+    if st.button("🌑 Trigger Black Swan", use_container_width=True):
+        economy.trigger_black_swan(impact=0.3)
         st.rerun()
 
 with col3:
@@ -275,66 +296,81 @@ with col3:
         st.session_state.economy = Economy(n_agents, grid_size)
         st.rerun()
 
-# --- Metrics ---
+# --- METRICS ---
 st.divider()
 wealths = [a.wealth for a in economy.agents]
-gini = calculate_gini(wealths)
-bankrupt = sum(1 for w in wealths if w <= 0)
+current_gini = calculate_gini(wealths)
+avg_wealth = np.mean(wealths)
+bankrupt_count = sum(1 for w in wealths if w <= 0)
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Turn", economy.turn)
-col2.metric("Gini", f"{gini:.3f}", delta=None, help="0=equal, 1=unequal")
-col3.metric("Avg Wealth", f"${np.mean(wealths):,.0f}")
-col4.metric("Bankrupt", f"{bankrupt}/{len(wealths)}")
+m1, m2, m3 = st.columns(3)
+m1.metric("Turn", economy.turn)
+m2.metric("Gini (Inequality)", f"{current_gini:.4f}")
+m3.metric("Avg Wealth", f"${avg_wealth:,.0f}")
 
-# --- Charts (PLOTLY - NO WARNINGS!) ---
+# --- CHARTS ---
 c1, c2 = st.columns(2)
 
 with c1:
     st.subheader("📈 Gini Over Time")
-    if economy.data_log:
+    if len(economy.data_log) > 0:
         df = pd.DataFrame(economy.data_log)
-        fig = px.line(df, x='turn', y='gini', 
-                     title="Inequality Evolution",
-                     labels={'gini': 'Gini Coefficient', 'turn': 'Turn'})
-        fig.update_layout(height=400, showlegend=False, 
-                         yaxis_range=[0,1], template='plotly_white')
-        st.plotly_chart(fig, use_container_width=True)
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot(df['turn'], df['gini'], 'b-', linewidth=2, label='Gini')
+        ax.set_xlabel("Turn")
+        ax.set_ylabel("Gini Coefficient")
+        ax.set_ylim(0, 1)
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        st.pyplot(fig)
+        plt.close(fig)
+    else:
+        st.info("👈 Run some turns first!")
 
 with c2:
     st.subheader("📊 Lorenz Curve")
     if sum(wealths) > 0:
         cum_pop, cum_wealth = generate_lorenz_data(wealths)
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=np.concatenate([[0], cum_pop]), 
-                                y=np.concatenate([[0], cum_wealth]),
-                                mode='lines', name='Actual',
-                                line=dict(color='blue', width=3)))
-        fig.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines',
-                                name='Equality', line=dict(color='red', dash='dash')))
-        fig.update_layout(height=400, showlegend=True,
-                         xaxis_title="Population %", yaxis_title="Wealth %",
-                         template='plotly_white')
-        st.plotly_chart(fig, use_container_width=True)
+        fig, ax = plt.subplots(figsize=(8, 5))
+        x_data = np.concatenate([[0], cum_pop])
+        y_data = np.concatenate([[0], cum_wealth])
+        ax.plot(x_data, y_data, 'b-', linewidth=3, label='Actual')
+        ax.plot([0,1], [0,1], 'r--', linewidth=2, label='Equality')
+        ax.fill_between(x_data, y_data, x_data, alpha=0.3, color='blue')
+        ax.set_xlabel("Cumulative Population %")
+        ax.set_ylabel("Cumulative Wealth %")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        st.pyplot(fig)
+        plt.close(fig)
+    else:
+        st.warning("No data yet!")
 
-# --- Agent Pie Chart ---
-st.subheader("👥 Population")
-col1, col2 = st.columns(2)
+# --- AGENTS ---
+st.subheader("👥 Agents")
+col_a1, col_a2 = st.columns(2)
 
-with col1:
+with col_a1:
     types = [a.type for a in economy.agents]
-    type_df = pd.DataFrame({'type': types}).value_counts().reset_index()
-    fig = px.pie(type_df, values='count', names='type', 
-                title="Agent Types", hole=0.4)
-    fig.update_traces(textposition='inside', textinfo='percent+label')
-    st.plotly_chart(fig, use_container_width=True)
+    type_counts = pd.Series(types).value_counts()
+    fig, ax = plt.subplots(figsize=(6, 6))
+    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1']
+    ax.pie(type_counts.values, labels=type_counts.index, 
+           autopct='%1.1f%%', colors=colors[:len(type_counts)])
+    ax.set_title("Agent Types")
+    st.pyplot(fig)
+    plt.close(fig)
 
-with col2:
-    active = len(wealths) - bankrupt
-    st.metric("Active Agents", active, delta=f"-{bankrupt}")
-    st.progress(active / len(wealths))
+with col_a2:
+    total = len(wealths)
+    active = total - bankrupt_count
+    st.metric("Active", active)
+    st.metric("Bankrupt", bankrupt_count)
+    st.progress(active/total)
 
-# --- Data Table ---
-with st.expander("📋 Recent Data", expanded=False):
+# --- DATA ---
+with st.expander("📋 Data Log"):
     if economy.data_log:
         st.dataframe(pd.DataFrame(economy.data_log).tail(20))
