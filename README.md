@@ -1,1 +1,1 @@
-# equilibriumsimulator
+# equilibrium-economics-simulator
